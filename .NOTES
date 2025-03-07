@@ -1,0 +1,27 @@
+if i want to transcode the same files to another direction or in another format the program says 'No input files selected': solution might be to keep the files in the list until i click 'Clear File List'
+
+
+Potential future features:
+01. Multi-threading: Implement parallel processing for faster transcoding of multiple files.
+02. Presets: Allow users to save and load custom transcoding presets.
+03. Metadata editing: Add the ability to edit audio metadata during transcoding.
+04. Audio normalization: Implement volume normalization across transcoded files.
+05. Batch renaming: Add a feature to rename output files based on patterns or metadata.
+06. Queue management: Allow users to add, remove, or reorder files in the transcoding queue.
+07. Advanced audio settings: Include options for channel mixing, audio filters, etc.
+08. Progress estimation: Implement a more accurate progress estimation and remaining time calculation.
+09. File preview: Add the ability to preview audio files before transcoding.
+10. Output format auto-detection: Suggest the best output format based on input file characteristics.
+11. Implement batch renaming feature
+12. Consider adding a simple video editor for trimming and joining clips
+13. Investigate potential for creating a plugin system for extensibility (not necessarily add the functions but create some mode or function that, in the future, can be used to add plugins or extended functionality)
+
+
+Add a Cancel Button: Implement a way to cancel ongoing transcoding operations.
+Improve Error Handling: Add more robust error handling, especially around FFmpeg operations.
+Save User Preferences: Implement saving and loading of user preferences (last used directory, format, etc.).
+File Format Validation: Add validation to ensure input files are compatible with the selected output format.
+Consider Implementing Some Requested Features: From your notes, features like presets, metadata editing, and batch renaming would be valuable additions.
+
+
+Remember to be concise, no add unnecessary code or make it overcomplicated, we need a clean and efficient software. Always keep in mind that we will be working on future features so the current code needs to be following the DRY KISS philosofy. Also keep in mind I don't know python language so please be specific when code needs to be modified. Before thinking of new code blocks, review the whole file and come up with the best solution to follow these instructions.
