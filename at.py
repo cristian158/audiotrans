@@ -1,3 +1,11 @@
+# Audio Transcoder
+
+# - 'Select output Dir' next to 'Select Input Files'
+# - Two success messages, unnecessary
+# - Max accuracy on loading bars (120% and 0.0%???)
+
+
+
 import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, GLib, Gdk
@@ -207,13 +215,14 @@ class AudioTranscoder(Gtk.Window):
 
         # Start the transcoding process
         GLib.idle_add(self.transcode_next_file)
+        
+        threading.Thread(target=self.transcode_next_file, daemon=True).start()
 
     def transcode_next_file(self):
         if not self.is_transcoding or not self.input_files:
             if self.current_file_index == self.total_files:
                 self.finish_transcoding()
             return False
-
 
         audio_file = self.input_files[self.current_file_index]
         output_filename = os.path.splitext(os.path.basename(audio_file.path))[0] + "." + self.settings.output_format
@@ -226,9 +235,9 @@ class AudioTranscoder(Gtk.Window):
                 self.update_total_progress()
                 return GLib.idle_add(self.transcode_next_file)
 
-        # Create a thread for the transcoding process
+        # Start the transcoding process in a new thread
         threading.Thread(target=self.transcode_file, args=(audio_file, output_path), daemon=True).start()
-        return False  # Don't call this function again from idle_add
+        return False# Don't call this function again from idle_add
     
     def transcode_file(self, audio_file, output_path):
         command = [
@@ -252,7 +261,6 @@ class AudioTranscoder(Gtk.Window):
         try:
             process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
             self.monitor_progress(process, audio_file.path)
-            
             process.wait()
             if process.returncode != 0:
                 raise subprocess.CalledProcessError(process.returncode, command)
@@ -264,7 +272,7 @@ class AudioTranscoder(Gtk.Window):
             logging.error(error_message)
             GLib.idle_add(self.show_error_dialog, f"Error transcoding {os.path.basename(audio_file.path)}")
             GLib.idle_add(self.file_complete)
-
+        
     def finish_transcoding(self):
         self.is_transcoding = False
         self.transcode_button.set_sensitive(True)
@@ -290,22 +298,21 @@ class AudioTranscoder(Gtk.Window):
                 continue
                 
             parts = line.split('=')
-            if len(parts) == 2:
-                key, value = parts
-                if key == 'out_time_ms':
-                    try:
-                        # Clean the value and convert to int
-                        value = value.strip()
-                        if value != 'N/A':
-                            progress = min(int(value) / (duration * 1000000), 1.0)
-                            GLib.idle_add(self.file_progressbar.set_fraction, progress)
-                            GLib.idle_add(self.file_progressbar.set_text, f"{progress:.1%}")
-                        else:
-                            GLib.idle_add(self.file_progressbar.pulse)
-                    except (ValueError, TypeError):
-                        # Handle any conversion errors
+            if len(parts) == 2 and parts[0] == 'out_time_ms':
+                try:
+                    value = parts[1].strip()
+                    if value != 'N/A':
+                        progress = min(int(value) / (duration * 1000000), 1.0)
+                        GLib.idle_add(self.update_progress_bars, progress)
+                    else:
                         GLib.idle_add(self.file_progressbar.pulse)
-                        logging.warning(f"Could not parse progress value: {value}")
+                except (ValueError, TypeError):
+                    GLib.idle_add(self.file_progressbar.pulse)
+                    logging.warning(f"Could not parse progress value: {value}")
+
+    def update_progress_bars(self, progress):
+        self.file_progressbar.set_fraction(progress)
+        self.file_progressbar.set_text(f"{progress:.1%}")
     
     def get_audio_duration(self, file_path):
         try:
@@ -352,13 +359,6 @@ class AudioTranscoder(Gtk.Window):
         self.total_progressbar.set_fraction(progress)
         self.total_progressbar.set_text(f"{progress:.1%}")
 
-    def finish_transcoding(self):
-        self.is_transcoding = False
-        self.transcode_button.set_sensitive(True)
-        self.status_label.set_text("Transcoding completed!")
-        # Only show one completion dialog
-        GLib.idle_add(self.show_completion_dialog)
-
     def show_error_dialog(self, message):
         dialog = Gtk.MessageDialog(transient_for=self, flags=0, message_type=Gtk.MessageType.ERROR,
                                    buttons=Gtk.ButtonsType.OK, text=message)
@@ -395,3 +395,16 @@ if __name__ == "__main__":
 # also when it's done, the gui catches up and starts to show the progress bar
 # the transcoding seems to be working fine
 # Also it froze and the messages cannot be exited unless I stop the whole software by CtrlC on the terminal that launched it 
+
+#  show what file is being currently transcoded
+
+#  make sure both progress bar work correctly: the 1st one is for overall progress, 2nd is for the current file.
+#  they keep glitching --> the 1st one with 200% and the 2nd going back and forth with the percentages
+
+#  being able to delete individual files from the list
+
+#  move the 'Select Output Directory' btn under 'Select Input Files' btn. Also make it so it indicates Default: same as input.
+
+#  now it doesn't give me 23423 messages but still 2 messages even if it's only one file 
+
+#  CtrlC gracefully

@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [2.1.0] - 2025-05-15
+## [0.3] - 2025-05-15
 - 
 
 ### Fixed
@@ -14,7 +14,7 @@ All notable changes to this project will be documented in this file.
 
 
 
-## [2.0.0] - 2024-05-15
+## [0.2] - 2024-05-15
 
 ### Added
 - Video transcoding support
@@ -34,7 +34,7 @@ All notable changes to this project will be documented in this file.
 - Issue with drag-and-drop not recognizing some file types
 - Memory leak during long batch operations
 
-## [1.0.0] - 2024-03-01
+## [0.1] - 2024-03-01
 
 ### Added
 - Initial release with audio transcoding functionality

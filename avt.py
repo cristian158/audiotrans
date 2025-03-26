@@ -1,3 +1,10 @@
+## Audio Video Transcoder
+
+
+## add a qtip note that explains the quality factor
+# actualkkly do the transcoding button
+# make it all in just one page maybe (cons: small screens)
+
 import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, GLib, Gdk
