@@ -3,6 +3,8 @@
 # - 'Select output Dir' next to 'Select Input Files'
 # - Two success messages, unnecessary
 # - Max accuracy on loading bars (120% and 0.0%???)
+# - Make cli version
+# - Handle CtrlC in gtk 
 
 
 
