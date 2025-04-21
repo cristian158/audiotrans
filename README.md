@@ -1,16 +1,17 @@
-# AudioVideoTranscoder
+# AudioTranscoder
 
-AudioVideoTranscoder is a powerful yet user-friendly tool for transcoding audio and video files. It provides a simple GTK-based interface for easy drag-and-drop operations while offering advanced features for more specific needs.
+AudioTranscoder is a powerful yet user-friendly tool for transcoding audio (also video files in the future). It provides a simple GTK-based interface for easy drag-and-drop operations while offering advanced features for more specific needs.
 
 ## Features
 
 - Audio transcoding to various formats (mp3, wav, ogg, aac, flac, m4a, wma)
-- Video transcoding to common formats (mkv, avi, mp4, etc.)
 - Audio extraction from video files
 - Quality Factor adjustment for optimizing file size and quality
 - Detailed file information and metadata editing
 - Multithreading support for improved performance
-- Simple and intuitive interface with drag-and-drop support
+- Simple and intuitive interface with drag-and-dr
+- FUTURE FEATURE: Video transcoding to common formats (mkv, avi, mp4, etc.)
+op support
 
 ## Requirements
 
