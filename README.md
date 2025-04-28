@@ -1,17 +1,17 @@
 # AudioTranscoder
 
-AudioTranscoder is a powerful yet user-friendly tool for transcoding audio (also video files in the future). It provides a simple GTK-based interface for easy drag-and-drop operations while offering advanced features for more specific needs.
+AudioTranscoder is a powerful yet user-friendly tool for transcoding audio files. It provides a simple GTK-based interface for easy drag-and-drop operations while offering advanced features for more specific needs.
 
 ## Features
 
-- Audio transcoding to various formats (mp3, wav, ogg, aac, flac, m4a, wma)
-- Audio extraction from video files
-- Quality Factor adjustment for optimizing file size and quality
-- Detailed file information and metadata editing
-- Multithreading support for improved performance
-- Simple and intuitive interface with drag-and-dr
-- FUTURE FEATURE: Video transcoding to common formats (mkv, avi, mp4, etc.)
-op support
+- Audio transcoding to various formats (mp3, wav, ogg, aac, flac)
+- Real-time progress tracking for both individual files and batch operations
+- Configurable bitrate and sample rate settings
+- Simple and intuitive interface with drag-and-drop support
+- Disk space checking before transcoding
+- FFmpeg validation and error handling
+- Batch processing with proper thread management
+- Detailed error reporting and logging
 
 ## Requirements
 
@@ -30,10 +30,17 @@ op support
 ## Usage
 
 Run the program with:
-python audiovideotranscoder.py
+```bash
+python at.py
+```
 
+Then use the GUI to:
+1. Select input files (drag-and-drop or file chooser)
+2. Choose output format and quality settings
+3. Select output directory (optional)
+4. Start transcoding
 
-Then use the GUI to select files, choose output formats, and start transcoding.
+The program will show real-time progress for both the current file and the overall batch operation.
 
 ## Contributing
 

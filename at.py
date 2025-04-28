@@ -1,7 +1,24 @@
-# Audio Transcoder
+"""
+Audio Transcoder
+
+A GTK-based application for transcoding audio files between different formats.
+Supports MP3, WAV, OGG, AAC, and FLAC formats with configurable bitrate and sample rate.
+
+Features:
+- Drag and drop file support
+- Batch processing
+- Progress tracking
+- Configurable output settings
+- Disk space checking
+- FFmpeg validation
+
+Requirements:
+- Python 3.6+
+- GTK 3.0
+- FFmpeg
+"""
 
 # - 'Select output Dir' next to 'Select Input Files'
-# - Two success messages, unnecessary
 # - Max accuracy on loading bars (120% and 0.0%???)
 # - Make cli version
 # - Handle CtrlC in gtk 
@@ -18,6 +35,13 @@ import logging
 from typing import List, Optional
 import urllib.parse
 import threading
+import shutil
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
 # Constants
 SUPPORTED_FORMATS = ["MP3", "WAV", "OGG", "AAC", "FLAC"]
@@ -25,11 +49,31 @@ DEFAULT_BITRATES = ["64k", "128k", "192k", "256k", "320k"]
 DEFAULT_SAMPLERATES = ["22050", "44100", "48000", "96000"]
 DEFAULT_WINDOW_SIZE = (600, 400)
 
+def check_ffmpeg_available():
+    """Check if FFmpeg is installed and accessible."""
+    try:
+        subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+
+def check_disk_space(path, required_size_mb=100):
+    """Check if there's enough disk space for transcoding."""
+    try:
+        stat = shutil.disk_usage(path)
+        free_space_mb = stat.free / (1024 * 1024)
+        return free_space_mb > required_size_mb
+    except Exception:
+        return False
+
 class AudioFile:
+    """Represents an audio file to be transcoded."""
     def __init__(self, path: str):
         self.path = path
+        self.size_mb = os.path.getsize(path) / (1024 * 1024) if os.path.exists(path) else 0
 
 class TranscodeSettings:
+    """Stores the settings for audio transcoding."""
     def __init__(self):
         self.output_format = "mp3"
         self.bitrate = "192k"
@@ -37,32 +81,63 @@ class TranscodeSettings:
         self.output_directory: Optional[str] = None
 
 class AudioTranscoder(Gtk.Window):
+    """Main application window for the audio transcoder."""
     def __init__(self):
         Gtk.Window.__init__(self, title="Audio Transcoder")
         self.set_border_width(10)
         self.set_default_size(*DEFAULT_WINDOW_SIZE)
+        self.set_resizable(True)
+
+        if not check_ffmpeg_available():
+            self.show_error_dialog("FFmpeg is not installed or not accessible. Please install FFmpeg to use this application.")
+            return
 
         self.input_files: List[AudioFile] = []
         self.settings = TranscodeSettings()
         self.is_transcoding = False
         self.total_files = 0
         self.current_file_index = 0
+        self.transcode_lock = threading.Lock()
+        self.current_process = None
 
         self.setup_ui()
+        self.connect("delete-event", self.on_window_delete)
+
+    def on_window_delete(self, widget, event):
+        """Handle window close event."""
+        if self.is_transcoding:
+            if self.current_process:
+                self.current_process.terminate()
+            self.is_transcoding = False
+        return False
 
     def setup_ui(self):
+        """Set up the user interface."""
         vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.add(vbox)
 
-        self.setup_input_selection(vbox)
-        self.setup_file_list(vbox)
-        self.setup_clear_button(vbox)
-        self.setup_output_format(vbox)
-        self.setup_custom_parameters(vbox)
-        self.setup_output_directory(vbox)
-        self.setup_transcode_button(vbox)
-        self.setup_progress_bars(vbox)
-        self.setup_status_label(vbox)
+        # Create a scrolled window for the main content
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        vbox.pack_start(scrolled, True, True, 0)
+
+        # Main content box
+        content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        scrolled.add(content_box)
+
+        self.setup_input_selection(content_box)
+        self.setup_file_list(content_box)
+        self.setup_clear_button(content_box)
+        self.setup_output_format(content_box)
+        self.setup_custom_parameters(content_box)
+        self.setup_output_directory(content_box)
+        self.setup_transcode_button(content_box)
+        self.setup_progress_bars(content_box)
+        self.setup_status_label(content_box)
+
+        # Add a status bar at the bottom
+        self.statusbar = Gtk.Statusbar()
+        vbox.pack_end(self.statusbar, False, False, 0)
 
     def setup_input_selection(self, vbox):
         input_button = Gtk.Button(label="Select Input Files")
@@ -202,6 +277,13 @@ class AudioTranscoder(Gtk.Window):
             self.show_error_dialog("No input files selected")
             return
 
+        # Check disk space
+        output_dir = self.settings.output_directory or os.path.dirname(self.input_files[0].path)
+        total_size_mb = sum(f.size_mb for f in self.input_files)
+        if not check_disk_space(output_dir, total_size_mb * 2):  # Double the size for safety
+            self.show_error_dialog("Not enough disk space for transcoding")
+            return
+
         self.settings.output_format = self.format_combo.get_active_text().lower()
         self.settings.bitrate = self.bitrate_combo.get_active_text()
         self.settings.samplerate = self.samplerate_combo.get_active_text()
@@ -215,155 +297,163 @@ class AudioTranscoder(Gtk.Window):
         self.total_files = len(self.input_files)
         self.current_file_index = 0
 
-        # Start the transcoding process
-        GLib.idle_add(self.transcode_next_file)
-        
+        # Start the transcoding process in a single thread
         threading.Thread(target=self.transcode_next_file, daemon=True).start()
 
     def transcode_next_file(self):
-        if not self.is_transcoding or not self.input_files:
-            if self.current_file_index == self.total_files:
-                self.finish_transcoding()
-            return False
+        with self.transcode_lock:
+            if not self.is_transcoding:
+                return
 
-        audio_file = self.input_files[self.current_file_index]
-        output_filename = os.path.splitext(os.path.basename(audio_file.path))[0] + "." + self.settings.output_format
-        output_dir = self.settings.output_directory or os.path.dirname(audio_file.path)
-        output_path = os.path.join(output_dir, output_filename)
+            # Check if we've processed all files
+            if self.current_file_index >= len(self.input_files):
+                GLib.idle_add(self.finish_transcoding)
+                return
 
-        if os.path.exists(output_path):
-            if not self.show_overwrite_dialog(output_path):
-                self.current_file_index += 1
-                self.update_total_progress()
-                return GLib.idle_add(self.transcode_next_file)
+            audio_file = self.input_files[self.current_file_index]
+            output_filename = os.path.splitext(os.path.basename(audio_file.path))[0] + "." + self.settings.output_format
+            output_dir = self.settings.output_directory or os.path.dirname(audio_file.path)
+            output_path = os.path.join(output_dir, output_filename)
 
-        # Start the transcoding process in a new thread
-        threading.Thread(target=self.transcode_file, args=(audio_file, output_path), daemon=True).start()
-        return False# Don't call this function again from idle_add
-    
+            if os.path.exists(output_path):
+                if not self.show_overwrite_dialog(output_path):
+                    self.current_file_index += 1
+                    GLib.idle_add(self.update_total_progress)
+                    self.transcode_next_file()
+                    return
+
+            # Start the transcoding process
+            self.transcode_file(audio_file, output_path)
+
     def transcode_file(self, audio_file, output_path):
-        command = [
-            "ffmpeg", "-i", audio_file.path,
-            "-y", "-b:a", self.settings.bitrate,
-            "-ar", self.settings.samplerate,
-            "-progress", "pipe:1"
-        ]
-
-        if self.settings.output_format == "mp3":
-            command.extend(["-codec:a", "libmp3lame"])
-        elif self.settings.output_format == "ogg":
-            command.extend(["-codec:a", "libvorbis"])
-        elif self.settings.output_format == "aac":
-            command.extend(["-codec:a", "aac"])
-        elif self.settings.output_format == "flac":
-            command.extend(["-codec:a", "flac"])
-
-        command.append(output_path)
-
         try:
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
-            self.monitor_progress(process, audio_file.path)
-            process.wait()
-            if process.returncode != 0:
-                raise subprocess.CalledProcessError(process.returncode, command)
-
-            logging.info(f"Successfully transcoded: {output_path}")
-            GLib.idle_add(self.file_complete)
-        except subprocess.CalledProcessError as e:
-            error_message = f"Error transcoding {audio_file.path}: {e}"
-            logging.error(error_message)
-            GLib.idle_add(self.show_error_dialog, f"Error transcoding {os.path.basename(audio_file.path)}")
-            GLib.idle_add(self.file_complete)
-        
-    def finish_transcoding(self):
-        self.is_transcoding = False
-        self.transcode_button.set_sensitive(True)
-        self.status_label.set_text("Transcoding completed!")
-        # Only show one completion dialog
-        GLib.idle_add(self.show_completion_dialog)
-
-    def file_complete(self):
-        self.current_file_index += 1
-        self.update_total_progress()
-        if self.current_file_index < self.total_files:
-            GLib.idle_add(self.transcode_next_file)
-        else:
-            self.finish_transcoding()
-        return False
+            command = [
+                "ffmpeg", "-i", audio_file.path,
+                "-y", "-b:a", self.settings.bitrate,
+                "-ar", self.settings.samplerate,
+                "-progress", "pipe:1",
+                output_path
+            ]
+            
+            self.current_process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+                bufsize=1  # Line buffered
+            )
+            
+            # Start progress monitoring in a separate thread
+            progress_thread = threading.Thread(
+                target=self.monitor_progress,
+                args=(self.current_process, audio_file.path),
+                daemon=True
+            )
+            progress_thread.start()
+            
+            # Wait for process to complete
+            self.current_process.wait()
+            progress_thread.join(timeout=1)  # Give progress thread a moment to finish
+            
+            if self.current_process.returncode == 0:
+                logging.info(f"Successfully transcoded: {output_path}")
+                self.current_file_index += 1
+                GLib.idle_add(self.update_total_progress)
+                GLib.idle_add(self.transcode_next_file)
+            else:
+                error = self.current_process.stderr.read()
+                GLib.idle_add(lambda: self.show_error_dialog(f"Transcoding failed: {error}"))
+                GLib.idle_add(self.finish_transcoding)
+                
+        except Exception as e:
+            logging.error(f"Error during transcoding: {str(e)}")
+            GLib.idle_add(lambda: self.show_error_dialog(f"Error during transcoding: {str(e)}"))
+            GLib.idle_add(self.finish_transcoding)
 
     def monitor_progress(self, process, input_path):
+        """Monitor the transcoding progress in a separate thread."""
         duration = self.get_audio_duration(input_path)
-        
-        while process.poll() is None:
-            line = process.stdout.readline()
-            if not line:
-                continue
-                
-            parts = line.split('=')
-            if len(parts) == 2 and parts[0] == 'out_time_ms':
-                try:
-                    value = parts[1].strip()
-                    if value != 'N/A':
-                        progress = min(int(value) / (duration * 1000000), 1.0)
+        if not duration:
+            return
+
+        while process.poll() is None:  # While process is running
+            try:
+                line = process.stdout.readline()
+                if not line:
+                    continue
+
+                if "out_time_ms" in line:
+                    time_str = line.split("=")[1].strip()
+                    try:
+                        current_time = float(time_str) / 1000000.0  # Convert to seconds
+                        progress = min(1.0, current_time / duration)
+                        # Update both progress bars immediately
                         GLib.idle_add(self.update_progress_bars, progress)
-                    else:
-                        GLib.idle_add(self.file_progressbar.pulse)
-                except (ValueError, TypeError):
-                    GLib.idle_add(self.file_progressbar.pulse)
-                    logging.warning(f"Could not parse progress value: {value}")
+                    except (ValueError, ZeroDivisionError):
+                        pass
+            except Exception as e:
+                logging.error(f"Error monitoring progress: {str(e)}")
+                break
 
     def update_progress_bars(self, progress):
-        self.file_progressbar.set_fraction(progress)
-        self.file_progressbar.set_text(f"{progress:.1%}")
-    
+        """Update progress bars safely from the main thread."""
+        try:
+            # Ensure progress is between 0 and 1
+            progress = max(0.0, min(1.0, progress))
+            
+            # Update file progress
+            self.file_progressbar.set_fraction(progress)
+            self.file_progressbar.set_text(f"Current File: {progress * 100:.1f}%")
+            
+            # Update total progress
+            if self.total_files > 0:
+                total_progress = (self.current_file_index + progress) / self.total_files
+                total_progress = max(0.0, min(1.0, total_progress))
+                self.total_progressbar.set_fraction(total_progress)
+                self.total_progressbar.set_text(f"Total Progress: {total_progress * 100:.1f}%")
+                
+            # Update status label with current file
+            if self.current_file_index < len(self.input_files):
+                current_file = os.path.basename(self.input_files[self.current_file_index].path)
+                self.status_label.set_text(f"Processing: {current_file}")
+        except Exception as e:
+            logging.error(f"Error updating progress bars: {str(e)}")
+
     def get_audio_duration(self, file_path):
         try:
-            result = subprocess.run([
-                'ffprobe', 
-                '-v', 'quiet',
-                '-print_format', 'json',
-                '-show_format',
-                '-show_streams',
+            command = [
+                "ffprobe",
+                "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
                 file_path
-            ], capture_output=True, text=True)
-            
-            data = json.loads(result.stdout)
-            duration = float(data['format']['duration'])
-            return duration
-        except (subprocess.CalledProcessError, KeyError, ValueError, json.JSONDecodeError):
-            logging.error(f"Failed to get duration for {file_path}")
-            return None
-        
-    def update_progress_periodically(self, process, input_path):
-        def update():
-            line = process.stdout.readline()
-            if line == '' and process.poll() is not None:
-                return False
-            if line:
-                parts = line.split('=')
-                if len(parts) == 2:
-                    key, value = parts
-                    if key == 'out_time_ms':
-                        duration = self.get_audio_duration(input_path)
-                        if duration:
-                            progress = min(int(value) / (duration * 1000000), 1.0)
-                            GLib.idle_add(self.file_progressbar.set_fraction, progress)
-                            GLib.idle_add(self.file_progressbar.set_text, f"{progress:.1%}")
-                        else:
-                            # Handle the case where duration couldn't be determined
-                            GLib.idle_add(self.file_progressbar.pulse)
-            return True
-
-        GLib.idle_add(update)
+            ]
+            result = subprocess.run(command, capture_output=True, text=True)
+            if result.returncode == 0:
+                return float(result.stdout.strip())
+        except Exception as e:
+            logging.error(f"Error getting duration for {file_path}: {str(e)}")
+        return None
 
     def update_total_progress(self):
-        progress = self.current_file_index / self.total_files
-        self.total_progressbar.set_fraction(progress)
-        self.total_progressbar.set_text(f"{progress:.1%}")
+        """Update the total progress bar when a file is completed."""
+        try:
+            if self.total_files > 0:
+                progress = self.current_file_index / self.total_files
+                progress = max(0.0, min(1.0, progress))
+                self.total_progressbar.set_fraction(progress)
+                self.total_progressbar.set_text(f"Total Progress: {progress * 100:.1f}%")
+        except Exception as e:
+            logging.error(f"Error updating total progress: {str(e)}")
 
     def show_error_dialog(self, message):
-        dialog = Gtk.MessageDialog(transient_for=self, flags=0, message_type=Gtk.MessageType.ERROR,
-                                   buttons=Gtk.ButtonsType.OK, text=message)
+        dialog = Gtk.MessageDialog(
+            parent=self,
+            flags=Gtk.DialogFlags.MODAL,
+            type=Gtk.MessageType.ERROR,
+            buttons=Gtk.ButtonsType.OK,
+            message_format=message
+        )
         dialog.run()
         dialog.destroy()
 
@@ -380,6 +470,17 @@ class AudioTranscoder(Gtk.Window):
         response = dialog.run()
         dialog.destroy()
         return response == Gtk.ResponseType.YES
+
+    def finish_transcoding(self):
+        """Clean up after transcoding is complete."""
+        self.is_transcoding = False
+        self.transcode_button.set_sensitive(True)
+        self.status_label.set_text("Transcoding completed!")
+        self.current_process = None
+        # Reset progress bars
+        self.file_progressbar.set_fraction(0)
+        self.total_progressbar.set_fraction(0)
+        GLib.idle_add(self.show_completion_dialog)
 
 def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s',
